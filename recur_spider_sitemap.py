@@ -13,7 +13,7 @@ import xml.etree.ElementTree as ET
 from xml.dom import minidom
 
 class WebCrawler:
-    def __init__(self, base_urls, max_workers=10, max_concurrent_requests=20, sitemap_file='landui_sitemap.xml'):
+    def __init__(self, base_urls, max_workers=10, max_concurrent_requests=20, sitemap_file='sitemap.xml'):
         self.base_urls = base_urls
         self.domain = urlparse(base_urls[0]).netloc  # Using first URL for domain
         self.visited_urls = set()
