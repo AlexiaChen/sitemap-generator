@@ -11,10 +11,12 @@ from threading import BoundedSemaphore
 from datetime import datetime
 import xml.etree.ElementTree as ET
 from xml.dom import minidom
+import argparse
 
 class WebCrawler:
-    def __init__(self, base_urls, max_workers=10, max_concurrent_requests=20, sitemap_file='sitemap.xml'):
+    def __init__(self, base_urls, recursive=False, max_workers=10, max_concurrent_requests=20, sitemap_file='sitemap.xml'):
         self.base_urls = base_urls
+        self.recursive = recursive
         self.domain = urlparse(base_urls[0]).netloc  # Using first URL for domain
         self.visited_urls = set()
         self.url_queue = Queue()
@@ -83,8 +85,8 @@ class WebCrawler:
                 # Append URL to sitemap
                 self.append_to_sitemap(url)
 
-                # Only collect links if this is a root URL
-                if url in self.root_urls:
+                # Process links based on recursive flag
+                if self.recursive or url in self.root_urls:
                     for link in soup.find_all('a'):
                         href = link.get('href')
                         if href:
@@ -92,15 +94,26 @@ class WebCrawler:
                             if (urlparse(full_url).netloc == self.domain and 
                                 self.is_under_root_urls(full_url) and 
                                 full_url not in self.visited_urls):
-                                self.visited_urls.add(full_url)
-                                self.append_to_sitemap(full_url)
-                                print(f"Found direct link: {full_url}", flush=True)
+                                with self.url_lock:
+                                    if full_url not in self.visited_urls:
+                                        self.visited_urls.add(full_url)
+                                        if self.recursive:
+                                            self.executor.submit(self.process_url, full_url)
+                                        else:
+                                            self.append_to_sitemap(full_url)
+                                        print(f"Found link: {full_url}", flush=True)
 
             except Exception as e:
                 print(f"Error crawling {url}: {str(e)}", file=sys.stderr)
 
-
 def main():
+    parser = argparse.ArgumentParser(description='Web crawler for generating sitemap')
+    parser.add_argument('--recursive', '-r', action='store_true',
+                      help='Enable recursive crawling (include child links)')
+    parser.add_argument('--output', '-o', default='sitemap.xml',
+                      help='Output sitemap file name')
+    args = parser.parse_args()
+
     base_urls = [
         # "https://www.landui.com/docs/",
         # "https://www.landui.com/help/",
@@ -108,8 +121,8 @@ def main():
         "https://www.landui.com/"
     ]
     
-    print("Starting crawl for all base URLs")
-    crawler = WebCrawler(base_urls)
+    print(f"Starting {'recursive' if args.recursive else 'non-recursive'} crawl for all base URLs")
+    crawler = WebCrawler(base_urls, recursive=args.recursive, sitemap_file=args.output)
     crawler.crawl_parallel()
     crawler.finalize_sitemap()  # Close the XML structure
     crawler.executor.shutdown()
