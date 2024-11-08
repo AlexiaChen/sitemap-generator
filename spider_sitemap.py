@@ -5,7 +5,7 @@ from bs4 import BeautifulSoup
 from urllib.parse import urljoin, urlparse
 import sys
 from concurrent.futures import ThreadPoolExecutor
-from queue import Queue
+from queue import Queue, Empty  # Fix: import Empty explicitly
 import threading
 from threading import BoundedSemaphore
 from datetime import datetime
@@ -60,14 +60,55 @@ class WebCrawler:
     def is_under_root_urls(self, url):
         return any(url.startswith(root_url) for root_url in self.base_urls)
     
+    def is_valid_link_to_crawl(self, full_url):
+        """验证链接是否需要爬取"""
+        return (
+            urlparse(full_url).netloc == self.domain
+            and self.is_under_root_urls(full_url)
+            and full_url not in self.visited_urls
+        )
+
+    def should_process_links(self, url):
+        """判断是否需要处理页面中的链接"""
+        return self.recursive or url in self.root_urls
+
+    def process_found_link(self, full_url):
+        """处理发现的新链接"""
+        with self.url_lock:
+            if full_url not in self.visited_urls:
+                self.visited_urls.add(full_url)
+                if self.recursive:
+                    self.url_queue.put(full_url)
+                self.append_to_sitemap(full_url)
+                print(f"Found link: {full_url}", flush=True)
+
+    def crawl_worker(self):
+        """Worker that processes URLs from the queue"""
+        while True:
+            try:
+                url = self.url_queue.get(timeout=1)  # 1 second timeout
+                self.process_url(url)
+                self.url_queue.task_done()
+            except Empty:  # Fix: use Empty instead of Queue.Empty
+                break
+
     def crawl_parallel(self):
         # Add root URLs to queue
         for url in self.base_urls:
             self.url_queue.put(url)
-            self.visited_urls.add(url)  # Mark root URLs as visited
-            self.process_url(url)  # Process root URLs directly
+            self.visited_urls.add(url)
+
+        # Create and start worker threads
+        workers = []
+        for _ in range(self.executor._max_workers):
+            future = self.executor.submit(self.crawl_worker)
+            workers.append(future)
+
+        # Wait for all workers to complete
+        for worker in workers:
+            worker.result()
         
-        self.executor.shutdown()  # Wait for all tasks to complete
+        self.executor.shutdown()
 
     def process_url(self, url):
         if not self.is_valid_url(url) or not self.is_under_root_urls(url):
@@ -81,27 +122,19 @@ class WebCrawler:
 
                 soup = BeautifulSoup(response.text, 'html.parser')
                 print(f"Found URL: {url}", flush=True)
-                
-                # Append URL to sitemap
                 self.append_to_sitemap(url)
 
-                # Process links based on recursive flag
-                if self.recursive or url in self.root_urls:
-                    for link in soup.find_all('a'):
-                        href = link.get('href')
-                        if href:
-                            full_url = urljoin(url, href)
-                            if (urlparse(full_url).netloc == self.domain and 
-                                self.is_under_root_urls(full_url) and 
-                                full_url not in self.visited_urls):
-                                with self.url_lock:
-                                    if full_url not in self.visited_urls:
-                                        self.visited_urls.add(full_url)
-                                        if self.recursive:
-                                            self.executor.submit(self.process_url, full_url)
-                                        else:
-                                            self.append_to_sitemap(full_url)
-                                        print(f"Found link: {full_url}", flush=True)
+                if not self.should_process_links(url):
+                    return
+
+                for link in soup.find_all('a'):
+                    href = link.get('href')
+                    if not href:
+                        continue
+                        
+                    full_url = urljoin(url, href)
+                    if self.is_valid_link_to_crawl(full_url):
+                        self.process_found_link(full_url)
 
             except Exception as e:
                 print(f"Error crawling {url}: {str(e)}", file=sys.stderr)
