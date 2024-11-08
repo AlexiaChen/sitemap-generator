@@ -1,4 +1,6 @@
-## Web Spider
+## Sitemap Generator
+
+This is a simple web crawler that generates a sitemap of a website. It is written in Python and uses the `requests` and `beautifulsoup4` libraries.
 
 
 ### Command Line Usage
