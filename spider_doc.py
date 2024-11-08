@@ -78,7 +78,8 @@ class WebCrawler:
                     self.url_queue.task_done()
                     continue
                 self.visited_urls.add(url)
-                self.visited_urls.add(url + ".html")
+                if url.lower().endswith(".html"):
+                    self.visited_urls.add(url[:-5])
 
             future = self.executor.submit(self.process_url, url)
             futures.append(future)
