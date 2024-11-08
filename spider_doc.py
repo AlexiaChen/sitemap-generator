@@ -78,8 +78,8 @@ class WebCrawler:
                     self.url_queue.task_done()
                     continue
                 self.visited_urls.add(url)
-                if url.lower().endswith(".html"):
-                    self.visited_urls.add(url[:-5])
+                # if url.lower().endswith(".html"):
+                #     self.visited_urls.add(url[:-5])
 
             future = self.executor.submit(self.process_url, url)
             futures.append(future)
@@ -114,9 +114,10 @@ class WebCrawler:
 
 def main():
     base_urls = [
-        "https://www.landui.com/docs/",
-        "https://www.landui.com/help/",
-        "https://www.landui.com/help/ilist-0"
+        # "https://www.landui.com/docs/",
+        # "https://www.landui.com/help/",
+        # "https://www.landui.com/help/ilist-0"
+        "https://www.landui.com/"
     ]
     
     print("Starting crawl for all base URLs")
