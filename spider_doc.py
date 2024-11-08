@@ -13,15 +13,9 @@ import xml.etree.ElementTree as ET
 from xml.dom import minidom
 
 class WebCrawler:
-    root_urls = [
-        "https://www.landui.com/docs/",
-        "https://www.landui.com/help/",
-        "https://www.landui.com/help/ilist-0"
-    ]
-
-    def __init__(self, base_url, max_workers=10, max_concurrent_requests=20):
-        self.base_url = base_url
-        self.domain = urlparse(base_url).netloc
+    def __init__(self, base_urls, max_workers=10, max_concurrent_requests=20):
+        self.base_urls = base_urls
+        self.domain = urlparse(base_urls[0]).netloc  # Using first URL for domain
         self.visited_urls = set()
         self.url_queue = Queue()
         self.url_lock = threading.Lock()
@@ -36,10 +30,13 @@ class WebCrawler:
             return False
 
     def is_under_root_urls(self, url):
-        return any(url.startswith(root_url) for root_url in self.root_urls)
+        return any(url.startswith(root_url) for root_url in self.base_urls)
     
     def crawl_parallel(self):
-        self.url_queue.put(self.base_url)
+        # Initialize queue with all base URLs
+        for url in self.base_urls:
+            self.url_queue.put(url)
+        
         futures = []
 
         while True:
@@ -56,6 +53,7 @@ class WebCrawler:
                     self.url_queue.task_done()
                     continue
                 self.visited_urls.add(url)
+                self.visited_urls.add(url + ".html")
 
             future = self.executor.submit(self.process_url, url)
             futures.append(future)
@@ -120,13 +118,17 @@ class WebCrawler:
             f.write('\n'.join(xml_str.split('\n')[1:]))
 
 def main():
-    all_visited_urls = set()
-    for start_url in WebCrawler.root_urls:
-        print(f"\nStarting crawl for: {start_url}")
-        crawler = WebCrawler(start_url)
-        crawler.crawl_parallel()
-        crawler.executor.shutdown()
-        all_visited_urls.update(url for url in crawler.visited_urls if crawler.is_under_root_urls(url))
+    base_urls = [
+        "https://www.landui.com/docs/",
+        "https://www.landui.com/help/",
+        "https://www.landui.com/help/ilist-0"
+    ]
+    
+    print("Starting crawl for all base URLs")
+    crawler = WebCrawler(base_urls)
+    crawler.crawl_parallel()
+    crawler.executor.shutdown()
+    all_visited_urls = set(url for url in crawler.visited_urls if crawler.is_under_root_urls(url))
     
     print("\nCrawling completed!")
     print(f"Total unique URLs found: {len(all_visited_urls)}")
