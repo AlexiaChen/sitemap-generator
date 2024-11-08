@@ -23,6 +23,7 @@ class WebCrawler:
         self.executor = ThreadPoolExecutor(max_workers=max_workers)
         self.semaphore = BoundedSemaphore(max_concurrent_requests)
         self.sitemap_file = sitemap_file
+        self.root_urls = set(base_urls)  # Store initial URLs
         
         # Initialize sitemap file
         self._init_sitemap_file()
@@ -58,32 +59,13 @@ class WebCrawler:
         return any(url.startswith(root_url) for root_url in self.base_urls)
     
     def crawl_parallel(self):
-        # Initialize queue with all base URLs
+        # Add root URLs to queue
         for url in self.base_urls:
             self.url_queue.put(url)
+            self.visited_urls.add(url)  # Mark root URLs as visited
+            self.process_url(url)  # Process root URLs directly
         
-        futures = []
-
-        while True:
-            try:
-                url = self.url_queue.get(timeout=5)  # Wait for 5 seconds for new URLs
-            except:
-                # If no URLs in queue for 5 seconds, check if all tasks are done
-                if all(future.done() for future in futures):
-                    break
-                continue
-
-            with self.url_lock:
-                if url in self.visited_urls:
-                    self.url_queue.task_done()
-                    continue
-                self.visited_urls.add(url)
-                # if url.lower().endswith(".html"):
-                #     self.visited_urls.add(url[:-5])
-
-            future = self.executor.submit(self.process_url, url)
-            futures.append(future)
-            self.url_queue.task_done()
+        self.executor.shutdown()  # Wait for all tasks to complete
 
     def process_url(self, url):
         if not self.is_valid_url(url) or not self.is_under_root_urls(url):
@@ -98,15 +80,21 @@ class WebCrawler:
                 soup = BeautifulSoup(response.text, 'html.parser')
                 print(f"Found URL: {url}", flush=True)
                 
-                # Append URL to sitemap immediately after successful crawl
+                # Append URL to sitemap
                 self.append_to_sitemap(url)
 
-                for link in soup.find_all('a'):
-                    href = link.get('href')
-                    if href:
-                        full_url = urljoin(url, href)
-                        if urlparse(full_url).netloc == self.domain and self.is_under_root_urls(full_url):
-                            self.url_queue.put(full_url)
+                # Only collect links if this is a root URL
+                if url in self.root_urls:
+                    for link in soup.find_all('a'):
+                        href = link.get('href')
+                        if href:
+                            full_url = urljoin(url, href)
+                            if (urlparse(full_url).netloc == self.domain and 
+                                self.is_under_root_urls(full_url) and 
+                                full_url not in self.visited_urls):
+                                self.visited_urls.add(full_url)
+                                self.append_to_sitemap(full_url)
+                                print(f"Found direct link: {full_url}", flush=True)
 
             except Exception as e:
                 print(f"Error crawling {url}: {str(e)}", file=sys.stderr)
