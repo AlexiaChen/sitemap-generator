@@ -100,9 +100,9 @@ class WebCrawler:
 
         # Create and start worker threads
         workers = []
-        for _ in range(self.executor._max_workers):
-            future = self.executor.submit(self.crawl_worker)
-            workers.append(future)
+       
+        future = self.executor.submit(self.crawl_worker)
+        workers.append(future)
 
         # Wait for all workers to complete
         for worker in workers:
@@ -121,7 +121,6 @@ class WebCrawler:
                     return
 
                 soup = BeautifulSoup(response.text, 'html.parser')
-                print(f"Found URL: {url}", flush=True)
                 self.append_to_sitemap(url)
 
                 if not self.should_process_links(url):
