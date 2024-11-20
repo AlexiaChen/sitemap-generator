@@ -12,8 +12,22 @@ from datetime import datetime
 import xml.etree.ElementTree as ET
 from xml.dom import minidom
 import argparse
+from urllib.parse import quote, urlparse, urlunparse
 
 class WebCrawler:
+
+    NAV_URLS = [
+        "https://www.landui.com/",
+        "https://www.landui.com/eve/activity",
+        "https://www.landui.com/mart/",
+        "https://www.landui.com/security/",
+        "https://www.landui.com/customer/",
+        "https://www.landui.com/cps/",
+        "https://www.landui.com/docs/",
+        "https://www.landui.com/help/aboutus.html",
+    ]
+
+
     def __init__(self, base_urls, recursive=False, max_workers=10, max_concurrent_requests=20, sitemap_file='sitemap.xml'):
         self.base_urls = base_urls
         self.recursive = recursive
@@ -36,13 +50,17 @@ class WebCrawler:
             f.write('<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n')
 
     def append_to_sitemap(self, url):
+        # Encode Chinese characters in URL while preserving the URL structure
+        encoded_url = quote(url, safe=':/?=&%')
+        current_date = datetime.now().strftime('%Y-%m-%d')
+        priority = '1' if url in self.NAV_URLS else '0.8'
         with self.sitemap_lock:
             with open(self.sitemap_file, 'a', encoding='utf-8') as f:
                 f.write('    <url>\n')
-                f.write(f'        <loc>{url}</loc>\n')
-                f.write('        <lastmod>2012-12-01</lastmod>\n')
+                f.write(f'        <loc>{encoded_url}</loc>\n')
+                f.write(f'        <lastmod>{current_date}</lastmod>\n')
                 f.write('        <changefreq>daily</changefreq>\n')
-                f.write('        <priority>0.8</priority>\n')
+                f.write(f'        <priority>{priority}</priority>\n')
                 f.write('    </url>\n')
 
     def finalize_sitemap(self):
@@ -72,6 +90,7 @@ class WebCrawler:
         """判断是否需要处理页面中的链接"""
         return self.recursive or url in self.root_urls
 
+    
     def process_found_link(self, full_url):
         """处理发现的新链接"""
         with self.url_lock:
@@ -121,7 +140,9 @@ class WebCrawler:
                     return
 
                 soup = BeautifulSoup(response.text, 'html.parser')
-                self.append_to_sitemap(url)
+                with self.url_lock:
+                    if url not in self.visited_urls:
+                        self.append_to_sitemap(url)
 
                 if not self.should_process_links(url):
                     return
@@ -147,9 +168,6 @@ def main():
     args = parser.parse_args()
 
     base_urls = [
-        # "https://www.landui.com/docs/",
-        # "https://www.landui.com/help/",
-        # "https://www.landui.com/help/ilist-0"
         "https://www.landui.com/"
     ]
     
